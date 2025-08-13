@@ -1,0 +1,391 @@
+---
+alwaysApply: true
+---
+
+# dev-guidelines
+
+## 🧹 Clean Code Principles
+
+### Code Readability
+
+  - **Descriptive Names**: Use clear, intention-revealing names for variables, functions, and classes.
+  - **Small Functions**: Keep functions focused on a single responsibility, ideally under 20-25 lines.
+  - **Consistent Formatting**: Use formatters like Prettier (Frontend) and Black/Ruff (Backend) with linters (ESLint) to enforce a consistent style.
+  - **Meaningful Comments**: Comment on the "why," not the "what." Explain complex business logic, trade-offs, or workarounds.
+
+### SOLID Principles
+
+  - **Single Responsibility**: Each class or function should have only one reason to change.
+  - **Open/Closed**: Software entities should be open for extension but closed for modification.
+  - **Liskov Substitution**: Subtypes must be substitutable for their base types without altering the correctness of the program.
+  - **Interface Segregation**: Clients should not be forced to depend on interfaces they do not use. Prefer many small, specific interfaces over one large, general-purpose one.
+  - **Dependency Inversion**: High-level modules should not depend on low-level modules. Both should depend on abstractions.
+
+-----
+
+## 🔧 Code Quality Standards
+
+### TypeScript/JavaScript
+
+  - **Strict Mode**: Enable all `strict` compiler checks in `tsconfig.json`.
+  - **Type Safety**: Avoid using the `any` type. Define explicit types for all data structures.
+  - **Null Safety**: Utilize optional chaining (`?.`) and the nullish coalescing operator (`??`) to handle `null` and `undefined` safely.
+  - **Immutability**: Prefer `const` over `let`. Avoid direct state mutation, especially in frameworks like React.
+
+### Python
+
+  - **Type Hints**: Use type annotations for all function parameters and return values to leverage static analysis.
+  - **Docstrings**: Document all public modules, functions, classes, and methods using a standard format (e.g., Google, NumPy).
+  - **PEP 8**: Adhere to the official Python style guide.
+  - **Virtual Environments**: Always use a dedicated virtual environment (like `venv` or `Poetry`) for each project to manage dependencies.
+
+### Error Handling
+
+  - **Graceful Degradation**: Handle potential errors gracefully without crashing the application.
+  - **User-Friendly Messages**: Provide clear, actionable error messages to the end-user.
+  - **Logging**: Log errors with sufficient context (e.g., stack trace, request ID, user ID) for easier debugging.
+  - **Validation**: Validate all inputs at the boundaries of your system (e.g., API inputs, function arguments).
+
+-----
+
+## 🧪 Testing Strategy
+
+### Test Pyramid
+
+A healthy test suite follows the test pyramid model, emphasizing a strong foundation of unit tests.
+
+  - **Unit Tests (70%)**: Test individual functions and components in isolation. They are fast and cheap to write.
+  - **Integration Tests (20%)**: Test the interaction between different parts of the system, like API endpoints and their service integrations.
+  - **End-to-End (E2E) Tests (10%)**: Test critical user journeys through the entire application stack, from the UI to the database. They are slow and expensive but provide the highest confidence.
+
+### Testing Best Practices
+
+  - **Arrange-Act-Assert**: Structure tests with these three distinct phases for clarity.
+  - **Descriptive Test Names**: The name should clearly describe the scenario being tested and the expected outcome.
+  - **Mock External Dependencies**: Isolate the code under test by mocking external services, databases, and APIs.
+  - **Fast and Isolated Tests**: Tests should be fast and self-contained, not depending on the state or outcome of other tests.
+
+### Frontend Testing Example
+
+```typescript
+// Component testing example with React Testing Library
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MyComponent } from './MyComponent';
+
+describe('MyComponent', () => {
+  it('should display the initial text correctly', () => {
+    // Arrange
+    render(<MyComponent initialText="Hello World" />);
+    
+    // Assert
+    expect(screen.getByText('Hello World')).toBeInTheDocument();
+  });
+
+  it('should call the onClick handler when the button is clicked', () => {
+    // Arrange
+    const handleClick = jest.fn();
+    render(<MyComponent onClick={handleClick} />);
+    const button = screen.getByRole('button', { name: /click me/i });
+    
+    // Act
+    fireEvent.click(button);
+    
+    // Assert
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+### Backend Testing Example
+
+```python
+# Service testing example with pytest and unittest.mock
+import pytest
+from unittest.mock import Mock, patch
+from your_project.application.services.entity_service import EntityService
+
+class TestEntityService:
+    @pytest.fixture
+    def mock_entity_repository(self):
+        return Mock()
+    
+    @pytest.fixture
+    def entity_service(self, mock_entity_repository):
+        return EntityService(mock_entity_repository)
+    
+    async def test_get_entity_by_id_success(self, entity_service, mock_entity_repository):
+        # Arrange
+        entity_id = "some-uuid-123"
+        expected_entity = {"id": entity_id, "name": "Test Entity"} # Assume a dict or Pydantic model
+        mock_entity_repository.get_by_id.return_value = expected_entity
+        
+        # Act
+        result = await entity_service.get_entity_by_id(entity_id)
+        
+        # Assert
+        assert result == expected_entity
+        mock_entity_repository.get_by_id.assert_called_once_with(entity_id)
+```
+
+-----
+
+## 🔄 Development Workflow
+
+### Git Workflow
+
+  - **Feature Branches**: All work must be done in a dedicated branch created from the main development branch (e.g., `main` or `develop`).
+  - **Conventional Commits**: Adhere to the Conventional Commits specification for structured, readable commit messages.
+  - **Pull Requests (PRs)**: All code must be merged into the main branch via a Pull Request that requires at least one code review approval.
+  - **Squash and Merge**: Use "Squash and Merge" to keep the main branch history clean and linear, with each commit representing a complete feature or fix.
+
+### Commit Message Format
+
+```
+type(scope): description
+
+[optional body with more details]
+
+[optional footer with breaking changes or issue references]
+```
+
+  - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`.
+
+### Code Review Checklist
+
+  - [ ] **Functionality**: Does the code achieve its intended purpose?
+  - [ ] **Readability**: Is the code clear, concise, and easy to understand?
+  - [ ] **Performance**: Are there any obvious performance bottlenecks?
+  - [ ] **Security**: Does the code introduce any security vulnerabilities (e.g., XSS, SQLi)?
+  - [ ] **Testing**: Are there sufficient tests for the new logic? Do existing tests pass?
+  - [ ] **Documentation**: Is any necessary documentation (code comments, READMEs) updated?
+
+-----
+
+## 🔧 Development Environment Setup
+
+### Required Tools
+
+  - **Node.js**: Latest LTS version
+  - **Python**: 3.11+
+  - **Git**: Latest version
+  - **Docker**: For containerized services (e.g., PostgreSQL, Redis)
+  - **VS Code**: Recommended IDE with suggested extensions
+
+### VS Code Extensions
+
+  - **Python**: Official Python extension pack from Microsoft.
+  - **ESLint**: Integrates ESLint into VS Code.
+  - **Prettier**: Code formatter.
+  - **GitLens**: Supercharges Git capabilities within the editor.
+  - **Thunder Client**: A lightweight alternative to Postman for API testing.
+
+### Environment Configuration Example
+
+```bash
+# Backend setup
+cd backend/
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -e .
+pip install -r requirements.dev.txt
+
+# Frontend setup
+cd frontend/
+npm install
+npm run dev
+```Of course. Here is the generalized version of the development best practices, with all HANI-specific details removed. This can be used as a standard guide for LinguaLoop and future projects.
+
+-----
+
+# General Development Best Practices
+
+## 🧹 Clean Code Principles
+
+### Code Readability
+
+  - **Descriptive Names**: Use clear, intention-revealing names for variables, functions, and classes.
+  - **Small Functions**: Keep functions focused on a single responsibility, ideally under 20-25 lines.
+  - **Consistent Formatting**: Use formatters like Prettier (Frontend) and Black/Ruff (Backend) with linters (ESLint) to enforce a consistent style.
+  - **Meaningful Comments**: Comment on the "why," not the "what." Explain complex business logic, trade-offs, or workarounds.
+
+### SOLID Principles
+
+  - **Single Responsibility**: Each class or function should have only one reason to change.
+  - **Open/Closed**: Software entities should be open for extension but closed for modification.
+  - **Liskov Substitution**: Subtypes must be substitutable for their base types without altering the correctness of the program.
+  - **Interface Segregation**: Clients should not be forced to depend on interfaces they do not use. Prefer many small, specific interfaces over one large, general-purpose one.
+  - **Dependency Inversion**: High-level modules should not depend on low-level modules. Both should depend on abstractions.
+
+-----
+
+## 🔧 Code Quality Standards
+
+### TypeScript/JavaScript
+
+  - **Strict Mode**: Enable all `strict` compiler checks in `tsconfig.json`.
+  - **Type Safety**: Avoid using the `any` type. Define explicit types for all data structures.
+  - **Null Safety**: Utilize optional chaining (`?.`) and the nullish coalescing operator (`??`) to handle `null` and `undefined` safely.
+  - **Immutability**: Prefer `const` over `let`. Avoid direct state mutation, especially in frameworks like React.
+
+### Python
+
+  - **Type Hints**: Use type annotations for all function parameters and return values to leverage static analysis.
+  - **Docstrings**: Document all public modules, functions, classes, and methods using a standard format (e.g., Google, NumPy).
+  - **PEP 8**: Adhere to the official Python style guide.
+  - **Virtual Environments**: Always use a dedicated virtual environment (like `venv` or `Poetry`) for each project to manage dependencies.
+
+### Error Handling
+
+  - **Graceful Degradation**: Handle potential errors gracefully without crashing the application.
+  - **User-Friendly Messages**: Provide clear, actionable error messages to the end-user.
+  - **Logging**: Log errors with sufficient context (e.g., stack trace, request ID, user ID) for easier debugging.
+  - **Validation**: Validate all inputs at the boundaries of your system (e.g., API inputs, function arguments).
+
+-----
+
+## 🧪 Testing Strategy
+
+### Test Pyramid
+
+A healthy test suite follows the test pyramid model, emphasizing a strong foundation of unit tests.
+
+  - **Unit Tests (70%)**: Test individual functions and components in isolation. They are fast and cheap to write.
+  - **Integration Tests (20%)**: Test the interaction between different parts of the system, like API endpoints and their service integrations.
+  - **End-to-End (E2E) Tests (10%)**: Test critical user journeys through the entire application stack, from the UI to the database. They are slow and expensive but provide the highest confidence.
+
+### Testing Best Practices
+
+  - **Arrange-Act-Assert**: Structure tests with these three distinct phases for clarity.
+  - **Descriptive Test Names**: The name should clearly describe the scenario being tested and the expected outcome.
+  - **Mock External Dependencies**: Isolate the code under test by mocking external services, databases, and APIs.
+  - **Fast and Isolated Tests**: Tests should be fast and self-contained, not depending on the state or outcome of other tests.
+
+### Frontend Testing Example
+
+```typescript
+// Component testing example with React Testing Library
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MyComponent } from './MyComponent';
+
+describe('MyComponent', () => {
+  it('should display the initial text correctly', () => {
+    // Arrange
+    render(<MyComponent initialText="Hello World" />);
+    
+    // Assert
+    expect(screen.getByText('Hello World')).toBeInTheDocument();
+  });
+
+  it('should call the onClick handler when the button is clicked', () => {
+    // Arrange
+    const handleClick = jest.fn();
+    render(<MyComponent onClick={handleClick} />);
+    const button = screen.getByRole('button', { name: /click me/i });
+    
+    // Act
+    fireEvent.click(button);
+    
+    // Assert
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+### Backend Testing Example
+
+```python
+# Service testing example with pytest and unittest.mock
+import pytest
+from unittest.mock import Mock, patch
+from your_project.application.services.entity_service import EntityService
+
+class TestEntityService:
+    @pytest.fixture
+    def mock_entity_repository(self):
+        return Mock()
+    
+    @pytest.fixture
+    def entity_service(self, mock_entity_repository):
+        return EntityService(mock_entity_repository)
+    
+    async def test_get_entity_by_id_success(self, entity_service, mock_entity_repository):
+        # Arrange
+        entity_id = "some-uuid-123"
+        expected_entity = {"id": entity_id, "name": "Test Entity"} # Assume a dict or Pydantic model
+        mock_entity_repository.get_by_id.return_value = expected_entity
+        
+        # Act
+        result = await entity_service.get_entity_by_id(entity_id)
+        
+        # Assert
+        assert result == expected_entity
+        mock_entity_repository.get_by_id.assert_called_once_with(entity_id)
+```
+
+-----
+
+## 🔄 Development Workflow
+
+### Git Workflow
+
+  - **Feature Branches**: All work must be done in a dedicated branch created from the main development branch (e.g., `main` or `develop`).
+  - **Conventional Commits**: Adhere to the Conventional Commits specification for structured, readable commit messages.
+  - **Pull Requests (PRs)**: All code must be merged into the main branch via a Pull Request that requires at least one code review approval.
+  - **Squash and Merge**: Use "Squash and Merge" to keep the main branch history clean and linear, with each commit representing a complete feature or fix.
+
+### Commit Message Format
+
+```
+type(scope): description
+
+[optional body with more details]
+
+[optional footer with breaking changes or issue references]
+```
+
+  - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`.
+
+### Code Review Checklist
+
+  - [ ] **Functionality**: Does the code achieve its intended purpose?
+  - [ ] **Readability**: Is the code clear, concise, and easy to understand?
+  - [ ] **Performance**: Are there any obvious performance bottlenecks?
+  - [ ] **Security**: Does the code introduce any security vulnerabilities (e.g., XSS, SQLi)?
+  - [ ] **Testing**: Are there sufficient tests for the new logic? Do existing tests pass?
+  - [ ] **Documentation**: Is any necessary documentation (code comments, READMEs) updated?
+
+-----
+
+## 🔧 Development Environment Setup
+
+### Required Tools
+
+  - **Node.js**: Latest LTS version
+  - **Python**: 3.11+
+  - **Git**: Latest version
+  - **Docker**: For containerized services (e.g., PostgreSQL, Redis)
+  - **VS Code**: Recommended IDE with suggested extensions
+
+### VS Code Extensions
+
+  - **Python**: Official Python extension pack from Microsoft.
+  - **ESLint**: Integrates ESLint into VS Code.
+  - **Prettier**: Code formatter.
+  - **GitLens**: Supercharges Git capabilities within the editor.
+  - **Thunder Client**: A lightweight alternative to Postman for API testing.
+
+### Environment Configuration Example
+
+```bash
+# Backend setup
+cd backend/
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -e .
+pip install -r requirements.dev.txt
+
+# Frontend setup
+cd frontend/
+npm install
+npm run dev
+```

@@ -1,0 +1,580 @@
+---
+alwaysApply: true
+---
+
+# backend-architecture
+
+## 🏗️ Project Structure & Architecture
+
+### Core Principles
+
+  - **Hexagonal Architecture**: The domain layer is completely isolated from external dependencies like frameworks and databases.
+  - **Dependency Rule**: The **Domain layer must NEVER know about the Application, Adapter, or Presentation layers**. All dependencies point inwards.
+  - **Clean Code**: All code must be maintainable, readable, and follow SOLID principles.
+
+### Folder Structure
+
+```
+your_project_name/
+├── adapter/           # External integrations (DB persistence, external APIs, etc.)
+├── alembic/           # Database migrations (Alembic)
+├── application/       # Service (use case) layer containing business workflows
+├── config.py          # Environment configuration (Pydantic Settings)
+├── domain/            # Pure domain models, value objects, and schemas
+├── main.py            # FastAPI application entry point
+└── presentation/      # API routers, middleware, and dependency injection
+```
+
+### Layer Responsibilities
+
+#### Domain Layer (`domain/`)
+
+  - **Pure Pydantic models only**. No SQLAlchemy decorators or `Base` inheritance.
+  - Contains the core, immutable business logic and rules.
+  - Defines domain-specific exceptions in `domain/exceptions/`.
+  - Defines API request/response schemas in `domain/schemas/`.
+
+#### Application Layer (`application/`)
+
+  - Orchestrates use cases and business flows.
+  - Defines **port interfaces** (using Abstract Base Classes) in `application/interfaces/`. These ports are implemented by the adapter layer.
+  - **NO direct external dependencies** (e.g., no `import sqlalchemy`).
+
+#### Adapter Layer (`adapter/`)
+
+  - Implements the interfaces defined in the application layer.
+  - **Persistence**: All database access is handled through repositories in `adapter/persistence/repositories/`.
+  - **External APIs**: Adapters for third-party services (AI/LLM, messaging, etc.) are in `adapter/external/`.
+
+#### Presentation Layer (`presentation/`)
+
+  - Contains **slim FastAPI routers** that only handle request/response cycles.
+  - Manages middleware, global exception handling, and dependency injection.
+  - **NO business logic**. It only calls services from the application layer.
+
+## 🚀 Backend Startup Protocol
+
+### Pre-Startup Validation Checklist
+
+Before starting the server, always run these validation steps from the project root:
+
+```bash
+# 1. Activate your virtual environment
+# e.g., source venv/bin/activate
+
+# 2. Validate environment configuration (.env file)
+python -c "from your_project_name.config import get_settings; settings = get_settings(); print('Settings validation successful')"
+
+# 3. Test that all domain models can be imported without error
+python -c "from your_project_name.domain.models import *"
+
+# 4. Run the server
+PYTHONPATH=. uvicorn your_project_name.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Common Import Error Patterns & Solutions
+
+#### Pattern 1: Module Import Resolution
+
+  - **Symptom**: `ModuleNotFoundError: No module named 'your_project_name'`
+  - **Cause**: Python path is not set correctly when running scripts from the root directory.
+  - **Solution**: Always prefix commands with `PYTHONPATH=.` when running `uvicorn` or `alembic` from the project root.
+
+<!-- end list -->
+
+```bash
+# ✅ CORRECT
+PYTHONPATH=. uvicorn your_project_name.main:app --reload
+```
+
+#### Pattern 2: Domain Model Export Issues
+
+  - **Symptom**: `ImportError: cannot import name 'YourModel' from 'your_project_name.domain.models'`
+  - **Cause**: The new model or schema was not exported in the corresponding `__init__.py` file.
+  - **Solution**: Systematically manage exports in all `__init__.py` files using `__all__` and call `model_rebuild()` for Pydantic models.
+
+<!-- end list -->
+
+```python
+# ✅ REQUIRED PATTERN for your_project_name/domain/models/__init__.py
+from .your_entity import YourEntity, YourEntityCreate, YourEntityDetail
+from .another_entity import AnotherEntity, AnotherEnum
+
+__all__ = [
+    "YourEntity", "YourEntityCreate", "YourEntityDetail",
+    "AnotherEntity", "AnotherEnum",
+]
+
+# CRITICAL: Call model_rebuild() for all Pydantic models to update forward references
+_all_models = [
+    YourEntity, AnotherEntity,
+]
+
+for model in _all_models:
+    model.model_rebuild()
+```
+
+#### Pattern 3: PostgreSQL Driver Issues
+
+  - **Symptom**: `ModuleNotFoundError: No module named 'psycopg2._psycopg'`
+  - **Cause**: The PostgreSQL driver (`psycopg2`) is corrupted or was installed improperly.
+  - **Solution**: Force a re-installation of the binary package.
+
+<!-- end list -->
+
+```bash
+pip uninstall psycopg2 psycopg2-binary -y
+pip install psycopg2-binary
+python -c "import psycopg2; print(f'psycopg2 installed successfully: {psycopg2.__version__}')"
+```
+
+## 🔄 Import & Package Management Rules
+
+### 1\. Project Definition (`pyproject.toml`)
+
+Define your project so it's installable and its modules are discoverable.
+
+```toml
+[project]
+name = "your_project_name"
+version = "0.1.0"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["your_project_name*"]
+```
+
+### 2\. Package Installation
+
+Install the project in editable mode once. This allows absolute imports to work correctly.
+
+```bash
+# Run once in the project root directory
+pip install -e .
+```
+
+### 3\. Absolute Import Principle
+
+  - **ALWAYS use absolute imports** starting from the project root (`your_project_name`).
+  - **NEVER use relative imports** like `from ..services import ...`.
+
+<!-- end list -->
+
+```python
+# ❌ AVOID
+from ..domain.models import YourEntity
+
+# ✅ USE
+from your_project_name.domain.models import YourEntity
+```
+
+## 🗄️ Database & Persistence Rules
+
+### Domain vs. Persistence Models
+
+  - **Domain Models**: Pure Pydantic models defined in `domain/models/`. They represent the core business entities.
+  - **Persistence Models**: SQLAlchemy ORM classes defined in `adapter/persistence/models/`. They map to database tables.
+  - **Mappers**: Functions responsible for converting between Domain and Persistence models, located in `adapter/persistence/mappers.py`.
+
+### Database Access
+
+  - **ALL database operations** must be performed through **Repository** classes located in `adapter/persistence/repositories/`.
+  - **Services MUST NOT access the database context or SQLAlchemy models directly**. They must use repository interfaces.
+  - **Use `async/await`** for all database operations with `asyncpg` and SQLAlchemy's async support.
+
+## 🔧 Entity Creation Checklist
+
+This 10-step process ensures all layers of the Hexagonal Architecture are correctly implemented when adding a new entity.
+
+1.  **Domain Model**: Create the Pydantic model in `domain/models/[entity].py`.
+2.  **Domain Schema**: Create API request/response schemas in `domain/schemas/[entity].py`.
+3.  **Persistence Model**: Create the SQLAlchemy model in `adapter/persistence/models/[entity].py`.
+4.  **Repository Interface**: Define the abstract repository in `application/interfaces/[entity]_repository.py`.
+5.  **Repository Implementation**: Implement the interface in `adapter/persistence/repositories/[entity]_repository.py`.
+6.  **Service**: Create the use case service in `application/services/[entity]_service.py`.
+7.  **Domain Exceptions**: Define custom exceptions in `domain/exceptions/[entity].py`.
+8.  **Dependency Injection**: Update DI providers if necessary (e.g., in `presentation/dependencies/`).
+9.  **Router**: Create the FastAPI router in `presentation/routers/[entity].py`.
+10. **Migration**: Generate a new database migration using Alembic.
+
+**CRITICAL**: After creating new files/classes, **ALWAYS update the `__init__.py` files** in the respective directories to export them.
+
+## 🔧 Alembic Migration Protocol
+
+### Common Alembic Errors & Fixes
+
+  - **Error**: `Target database is not up to date.`
+      - **Solution**: Your local database is behind the latest migration. Run `alembic -c alembic.ini upgrade head` before generating a new one.
+  - **Error**: `ImportError` during autogeneration.
+      - **Solution**: This is almost always an issue with an `__init__.py` file. Fix the model exports and try again.
+  - **Error**: `pydantic_core.ValidationError: Field required` when running `alembic`.
+      - **Solution**: Alembic needs to load your app's configuration. Ensure your `.env` file exists and contains all required environment variables.
+
+## 🔍 Error Diagnosis Matrix
+
+| Error Type | Likely Cause | Immediate Action |
+| :--- | :--- | :--- |
+| **`ModuleNotFoundError`** | `PYTHONPATH` not set, or `pip install -e .` not run. | Prefix command with `PYTHONPATH=.`. |
+| **`ImportError`** | Missing export in an `__init__.py` file. | Find the relevant `__init__.py` and add the model/class to `__all__`. |
+| **`[Errno 48] Address already in use`** | A server process is already running on that port. | Find and kill the old process: `pkill -f uvicorn`. |
+| **`psycopg2` error** | Corrupted PostgreSQL driver. | Reinstall the driver: `pip install --force-reinstall psycopg2-binary`. |
+| **`pydantic_core.ValidationError`** | Missing or incorrect environment variables. | Create/update your `.env` file based on `config.py`. |
+
+## 🔔 Generic Notification System Guide
+
+### Core Components
+
+  - **Domain Models**: `Notification` models in the domain layer.
+  - **Adapters**: `WebSocketAdapter`, `FCMAdapter`, `SlackAdapter` in the adapter layer.
+  - **Composite Sender**: A class that can dispatch a notification to multiple channels (WebSocket, FCM, etc.).
+
+### Generic Notification Models (`domain/models/notification.py`)
+
+```python
+from enum import Enum
+from pydantic import BaseModel, Field
+
+# Generic notification types for any project
+class NotificationType(str, Enum):
+    ENTITY_CREATED = "entity_created"
+    ENTITY_UPDATED = "entity_updated"
+    TASK_COMPLETED = "task_completed"
+    USER_ACTION_REQUIRED = "user_action_required"
+
+class NotificationChannel(str, Enum):
+    WEBSOCKET = "websocket"
+    FCM = "fcm"  # Firebase Cloud Messaging
+    SLACK = "slack"
+    EMAIL = "email"
+
+class Notification(BaseModel):
+    user_id: str  # The ID of the user who should receive the notification
+    type: NotificationType
+    title: str
+    message: str
+    data: dict = Field(default_factory=dict) # Optional payload for frontend
+    channels: list[NotificationChannel] = Field(default_factory=list)
+    # ... other fields like id, is_read, created_at
+```
+
+### Integration Pattern
+
+Call the notification service from your main application services after a key business event occurs. **Never let a notification failure roll back the main transaction**.
+
+```python
+# In your_project_name/application/services/some_service.py
+from loguru import logger
+
+class SomeEntityService:
+    def __init__(self, repository, notification_service):
+        self._repository = repository
+        self._notification_service = notification_service
+
+    async def create_entity(self, data):
+        # 1. Main business logic
+        new_entity = await self._repository.create(data)
+
+        # 2. Trigger notification (fire and forget)
+        try:
+            await self._notification_service.send_entity_creation_notification(
+                user_id=new_entity.owner_id,
+                entity_name=new_entity.name
+            )
+            logger.info("Successfully sent entity creation notification.")
+        except Exception as e:
+            # CRITICAL: Log the error but do not raise it.
+            # Notification failure should not fail the core operation.
+            logger.error(f"Failed to send notification: {e}", exc_info=True)
+
+        return new_entity
+```
+
+-----
+# Generic Backend Comprehensive Rules
+
+## 🏗️ Project Structure & Architecture
+
+### Core Principles
+
+  - **Hexagonal Architecture**: The domain layer is completely isolated from external dependencies like frameworks and databases.
+  - **Dependency Rule**: The **Domain layer must NEVER know about the Application, Adapter, or Presentation layers**. All dependencies point inwards.
+  - **Clean Code**: All code must be maintainable, readable, and follow SOLID principles.
+
+### Folder Structure
+
+```
+your_project_name/
+├── adapter/           # External integrations (DB persistence, external APIs, etc.)
+├── alembic/           # Database migrations (Alembic)
+├── application/       # Service (use case) layer containing business workflows
+├── config.py          # Environment configuration (Pydantic Settings)
+├── domain/            # Pure domain models, value objects, and schemas
+├── main.py            # FastAPI application entry point
+└── presentation/      # API routers, middleware, and dependency injection
+```
+
+### Layer Responsibilities
+
+#### Domain Layer (`domain/`)
+
+  - **Pure Pydantic models only**. No SQLAlchemy decorators or `Base` inheritance.
+  - Contains the core, immutable business logic and rules.
+  - Defines domain-specific exceptions in `domain/exceptions/`.
+  - Defines API request/response schemas in `domain/schemas/`.
+
+#### Application Layer (`application/`)
+
+  - Orchestrates use cases and business flows.
+  - Defines **port interfaces** (using Abstract Base Classes) in `application/interfaces/`. These ports are implemented by the adapter layer.
+  - **NO direct external dependencies** (e.g., no `import sqlalchemy`).
+
+#### Adapter Layer (`adapter/`)
+
+  - Implements the interfaces defined in the application layer.
+  - **Persistence**: All database access is handled through repositories in `adapter/persistence/repositories/`.
+  - **External APIs**: Adapters for third-party services (AI/LLM, messaging, etc.) are in `adapter/external/`.
+
+#### Presentation Layer (`presentation/`)
+
+  - Contains **slim FastAPI routers** that only handle request/response cycles.
+  - Manages middleware, global exception handling, and dependency injection.
+  - **NO business logic**. It only calls services from the application layer.
+
+## 🚀 Backend Startup Protocol
+
+### Pre-Startup Validation Checklist
+
+Before starting the server, always run these validation steps from the project root:
+
+```bash
+# 1. Activate your virtual environment
+# e.g., source venv/bin/activate
+
+# 2. Validate environment configuration (.env file)
+python -c "from your_project_name.config import get_settings; settings = get_settings(); print('Settings validation successful')"
+
+# 3. Test that all domain models can be imported without error
+python -c "from your_project_name.domain.models import *"
+
+# 4. Run the server
+PYTHONPATH=. uvicorn your_project_name.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Common Import Error Patterns & Solutions
+
+#### Pattern 1: Module Import Resolution
+
+  - **Symptom**: `ModuleNotFoundError: No module named 'your_project_name'`
+  - **Cause**: Python path is not set correctly when running scripts from the root directory.
+  - **Solution**: Always prefix commands with `PYTHONPATH=.` when running `uvicorn` or `alembic` from the project root.
+
+<!-- end list -->
+
+```bash
+# ✅ CORRECT
+PYTHONPATH=. uvicorn your_project_name.main:app --reload
+```
+
+#### Pattern 2: Domain Model Export Issues
+
+  - **Symptom**: `ImportError: cannot import name 'YourModel' from 'your_project_name.domain.models'`
+  - **Cause**: The new model or schema was not exported in the corresponding `__init__.py` file.
+  - **Solution**: Systematically manage exports in all `__init__.py` files using `__all__` and call `model_rebuild()` for Pydantic models.
+
+<!-- end list -->
+
+```python
+# ✅ REQUIRED PATTERN for your_project_name/domain/models/__init__.py
+from .your_entity import YourEntity, YourEntityCreate, YourEntityDetail
+from .another_entity import AnotherEntity, AnotherEnum
+
+__all__ = [
+    "YourEntity", "YourEntityCreate", "YourEntityDetail",
+    "AnotherEntity", "AnotherEnum",
+]
+
+# CRITICAL: Call model_rebuild() for all Pydantic models to update forward references
+_all_models = [
+    YourEntity, AnotherEntity,
+]
+
+for model in _all_models:
+    model.model_rebuild()
+```
+
+#### Pattern 3: PostgreSQL Driver Issues
+
+  - **Symptom**: `ModuleNotFoundError: No module named 'psycopg2._psycopg'`
+  - **Cause**: The PostgreSQL driver (`psycopg2`) is corrupted or was installed improperly.
+  - **Solution**: Force a re-installation of the binary package.
+
+<!-- end list -->
+
+```bash
+pip uninstall psycopg2 psycopg2-binary -y
+pip install psycopg2-binary
+python -c "import psycopg2; print(f'psycopg2 installed successfully: {psycopg2.__version__}')"
+```
+
+## 🔄 Import & Package Management Rules
+
+### 1\. Project Definition (`pyproject.toml`)
+
+Define your project so it's installable and its modules are discoverable.
+
+```toml
+[project]
+name = "your_project_name"
+version = "0.1.0"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["your_project_name*"]
+```
+
+### 2\. Package Installation
+
+Install the project in editable mode once. This allows absolute imports to work correctly.
+
+```bash
+# Run once in the project root directory
+pip install -e .
+```
+
+### 3\. Absolute Import Principle
+
+  - **ALWAYS use absolute imports** starting from the project root (`your_project_name`).
+  - **NEVER use relative imports** like `from ..services import ...`.
+
+<!-- end list -->
+
+```python
+# ❌ AVOID
+from ..domain.models import YourEntity
+
+# ✅ USE
+from your_project_name.domain.models import YourEntity
+```
+
+## 🗄️ Database & Persistence Rules
+
+### Domain vs. Persistence Models
+
+  - **Domain Models**: Pure Pydantic models defined in `domain/models/`. They represent the core business entities.
+  - **Persistence Models**: SQLAlchemy ORM classes defined in `adapter/persistence/models/`. They map to database tables.
+  - **Mappers**: Functions responsible for converting between Domain and Persistence models, located in `adapter/persistence/mappers.py`.
+
+### Database Access
+
+  - **ALL database operations** must be performed through **Repository** classes located in `adapter/persistence/repositories/`.
+  - **Services MUST NOT access the database context or SQLAlchemy models directly**. They must use repository interfaces.
+  - **Use `async/await`** for all database operations with `asyncpg` and SQLAlchemy's async support.
+
+## 🔧 Entity Creation Checklist
+
+This 10-step process ensures all layers of the Hexagonal Architecture are correctly implemented when adding a new entity.
+
+1.  **Domain Model**: Create the Pydantic model in `domain/models/[entity].py`.
+2.  **Domain Schema**: Create API request/response schemas in `domain/schemas/[entity].py`.
+3.  **Persistence Model**: Create the SQLAlchemy model in `adapter/persistence/models/[entity].py`.
+4.  **Repository Interface**: Define the abstract repository in `application/interfaces/[entity]_repository.py`.
+5.  **Repository Implementation**: Implement the interface in `adapter/persistence/repositories/[entity]_repository.py`.
+6.  **Service**: Create the use case service in `application/services/[entity]_service.py`.
+7.  **Domain Exceptions**: Define custom exceptions in `domain/exceptions/[entity].py`.
+8.  **Dependency Injection**: Update DI providers if necessary (e.g., in `presentation/dependencies/`).
+9.  **Router**: Create the FastAPI router in `presentation/routers/[entity].py`.
+10. **Migration**: Generate a new database migration using Alembic.
+
+**CRITICAL**: After creating new files/classes, **ALWAYS update the `__init__.py` files** in the respective directories to export them.
+
+## 🔧 Alembic Migration Protocol
+
+### Common Alembic Errors & Fixes
+
+  - **Error**: `Target database is not up to date.`
+      - **Solution**: Your local database is behind the latest migration. Run `alembic -c alembic.ini upgrade head` before generating a new one.
+  - **Error**: `ImportError` during autogeneration.
+      - **Solution**: This is almost always an issue with an `__init__.py` file. Fix the model exports and try again.
+  - **Error**: `pydantic_core.ValidationError: Field required` when running `alembic`.
+      - **Solution**: Alembic needs to load your app's configuration. Ensure your `.env` file exists and contains all required environment variables.
+
+## 🔍 Error Diagnosis Matrix
+
+| Error Type | Likely Cause | Immediate Action |
+| :--- | :--- | :--- |
+| **`ModuleNotFoundError`** | `PYTHONPATH` not set, or `pip install -e .` not run. | Prefix command with `PYTHONPATH=.`. |
+| **`ImportError`** | Missing export in an `__init__.py` file. | Find the relevant `__init__.py` and add the model/class to `__all__`. |
+| **`[Errno 48] Address already in use`** | A server process is already running on that port. | Find and kill the old process: `pkill -f uvicorn`. |
+| **`psycopg2` error** | Corrupted PostgreSQL driver. | Reinstall the driver: `pip install --force-reinstall psycopg2-binary`. |
+| **`pydantic_core.ValidationError`** | Missing or incorrect environment variables. | Create/update your `.env` file based on `config.py`. |
+
+## 🔔 Generic Notification System Guide
+
+### Core Components
+
+  - **Domain Models**: `Notification` models in the domain layer.
+  - **Adapters**: `WebSocketAdapter`, `FCMAdapter`, `SlackAdapter` in the adapter layer.
+  - **Composite Sender**: A class that can dispatch a notification to multiple channels (WebSocket, FCM, etc.).
+
+### Generic Notification Models (`domain/models/notification.py`)
+
+```python
+from enum import Enum
+from pydantic import BaseModel, Field
+
+# Generic notification types for any project
+class NotificationType(str, Enum):
+    ENTITY_CREATED = "entity_created"
+    ENTITY_UPDATED = "entity_updated"
+    TASK_COMPLETED = "task_completed"
+    USER_ACTION_REQUIRED = "user_action_required"
+
+class NotificationChannel(str, Enum):
+    WEBSOCKET = "websocket"
+    FCM = "fcm"  # Firebase Cloud Messaging
+    SLACK = "slack"
+    EMAIL = "email"
+
+class Notification(BaseModel):
+    user_id: str  # The ID of the user who should receive the notification
+    type: NotificationType
+    title: str
+    message: str
+    data: dict = Field(default_factory=dict) # Optional payload for frontend
+    channels: list[NotificationChannel] = Field(default_factory=list)
+    # ... other fields like id, is_read, created_at
+```
+
+### Integration Pattern
+
+Call the notification service from your main application services after a key business event occurs. **Never let a notification failure roll back the main transaction**.
+
+```python
+# In your_project_name/application/services/some_service.py
+from loguru import logger
+
+class SomeEntityService:
+    def __init__(self, repository, notification_service):
+        self._repository = repository
+        self._notification_service = notification_service
+
+    async def create_entity(self, data):
+        # 1. Main business logic
+        new_entity = await self._repository.create(data)
+
+        # 2. Trigger notification (fire and forget)
+        try:
+            await self._notification_service.send_entity_creation_notification(
+                user_id=new_entity.owner_id,
+                entity_name=new_entity.name
+            )
+            logger.info("Successfully sent entity creation notification.")
+        except Exception as e:
+            # CRITICAL: Log the error but do not raise it.
+            # Notification failure should not fail the core operation.
+            logger.error(f"Failed to send notification: {e}", exc_info=True)
+
+        return new_entity
+```
+
+-----

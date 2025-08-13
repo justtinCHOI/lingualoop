@@ -1,0 +1,129 @@
+---
+alwaysApply: true
+---
+
+# project-blueprint
+
+## 🚀 Project Vision
+**[Project Name]** is a **[describe the project type, e.g., an intelligent language learning platform, a productivity tool, a social network]** designed to help users **[state the core user goal, e.g., master new vocabulary, organize their tasks, connect with peers]** through **[list 2-3 key features, e.g., AI-powered spaced repetition, collaborative workspaces, real-time messaging]**.
+
+## 🛠️ Technology Stack
+
+This stack represents a modern, scalable architecture suitable for a wide range of web applications.
+
+### Backend Architecture
+* **Framework**: Python + FastAPI
+* **Architecture**: Hexagonal Architecture (Ports & Adapters)
+* **Database**: PostgreSQL + PGVector (for potential vector search features)
+* **Cache/Message Queue**: Redis
+* **Search**: Elasticsearch (for advanced text search)
+* **AI/ML**: LangChain / LangGraph, OpenAI API, Ollama
+* **Authentication**: JWT + OAuth 2.0
+* **Real-time**: WebSocket
+* **Push Notifications**: FCM (Firebase Cloud Messaging)
+
+### Frontend Architecture
+* **Framework**: Next.js 14 + TypeScript
+* **Styling**: Tailwind CSS + shadcn/ui
+* **State Management**: TanStack Query (server state) + Zustand (client state)
+* **Forms**: React Hook Form + Zod (for validation)
+* **Deployment**: Vercel
+
+### DevOps & Infrastructure
+* **Containerization**: Docker
+* **CI/CD**: GitHub Actions
+* **Backend Deployment**: Google Cloud Run
+* **Storage**: Amazon S3 (for file uploads)
+* **Monitoring**: OpenTelemetry + Datadog (or a similar observability platform)
+* **Domain**: GoDaddy (or any other registrar)
+
+---
+
+## 🔄 Core Workflows
+
+Describe the primary user journeys and system processes.
+
+### A. New User Registration
+1.  **Sign Up**: User registers on the platform with an email/password or OAuth.
+2.  **Verification**: An email verification link is sent.
+3.  **Profile Setup**: User provides initial profile information.
+4.  **Onboarding**: User is guided through an initial setup or tutorial.
+
+### B. Core Feature A: [Name of a Core Feature, e.g., Creating a New Post]
+1.  **Initiation**: User navigates to the "Create New" page.
+2.  **Input**: User fills out a form with necessary data (e.g., title, content, tags).
+3.  **Processing**: The system validates and processes the input.
+4.  **Storage**: The new entity is saved to the database (e.g., in the `posts` table).
+5.  **Feedback**: User is redirected to the new content page with a success notification.
+
+### C. Core Feature B: [Name of another Feature, e.g., Interacting with Content]
+1.  **Discovery**: User finds content through a feed, search, or direct link.
+2.  **Action**: User performs an action (e.g., leaves a comment, gives a 'like').
+3.  **Real-time Update**: The action is immediately reflected for the user, and a WebSocket event is broadcast to other relevant users.
+4.  **Notification**: The content owner is notified of the interaction.
+
+---
+
+## 🗄️ Domain Modeling
+
+List the core data entities that define your project's domain.
+
+### Core Entities (Example: Blog Platform)
+* **`User`**: Represents all members of the platform.
+* **`Role`**: Defines user permissions (e.g., `MEMBER`, `EDITOR`, `ADMIN`).
+* **`Profile`**: Contains extended user information (1:1 with `User`).
+* **`Post`**: The main content entity created by users.
+* **`Comment`**: User responses to a `Post`.
+* **`Tag`**: Keywords used to categorize `Posts`.
+* **`Like`**: Represents a user's appreciation for a `Post` or `Comment`.
+* **`Notification`**: Records events to be shown to users.
+
+---
+
+## 🌐 URL Structure & Access Control
+
+Define the main pages/routes and which user roles can access them.
+
+### Page Access Matrix
+| URL Path | Page Description | Accessible Roles | Notes |
+| :--- | :--- | :--- | :--- |
+| `/` | Landing Page / Home | `GUEST`, `USER` | Shows different content for logged-in vs. logged-out users. |
+| `/dashboard` | User's main dashboard | `USER`, `ADMIN` | Displays personalized information and activity. |
+| `/settings` | User Profile & Settings | `USER`, `ADMIN` | Allows users to manage their account. |
+| `/items` | List of core items (e.g., posts) | `GUEST`, `USER` | Everyone can view, but only users can create. |
+| `/items/[id]` | Detail page for a specific item | `GUEST`, `USER` | Shows a single item and its related data (e.g., comments). |
+| `/admin` | Admin Panel | `ADMIN` | A dedicated area for site administration and moderation. |
+
+---
+
+## 🔌 API Specification (v1)
+
+Outline the main API categories and endpoints following RESTful principles.
+
+### Base URL
+`https://api.your-project.com/v1`
+
+### Core API Categories
+
+#### 1. Authentication (`/auth`)
+* `POST /auth/register` - New user registration.
+* `POST /auth/login` - User login.
+* `POST /auth/refresh` - Refresh access token.
+* `GET /auth/me` - Get current authenticated user's info.
+
+#### 2. Users & Profiles (`/users`)
+* `GET /users/{userId}` - Get a specific user's public profile.
+* `PUT /users/me` - Update the authenticated user's profile.
+
+#### 3. Core Resource (`/items`)
+* `GET /items` - Get a list of items (with filtering/pagination).
+* `POST /items` - Create a new item.
+* `GET /items/{itemId}` - Get details for a specific item.
+* `PUT /items/{itemId}` - Update an item.
+* `DELETE /items/{itemId}` - Delete an item.
+* `POST /items/{itemId}/comments` - Add a comment to an item.
+
+#### 4. Admin (`/admin`)
+* `GET /admin/users` - Get a list of all users.
+* `PUT /admin/users/{userId}/status` - Ban or update a user's status.
+* `GET /admin/analytics` - Get platform-wide analytics.

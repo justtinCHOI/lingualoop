@@ -1,0 +1,507 @@
+---
+alwaysApply: true
+---
+
+# frontend-architecture
+
+## 🏗️ Project Structure & Architecture
+
+### Core Philosophy
+
+  - **Next.js App Router**: Utilize the App Router for its benefits in layout composition, server components, and route-based code splitting.
+  - **Component-Driven Development**: Build the UI from a collection of reusable, composable, and isolated components.
+  - **TypeScript First**: Enforce type safety across the entire codebase to reduce runtime errors and improve developer experience.
+
+### Folder Structure
+
+This structure promotes a clear separation of concerns and scalability.
+
+```
+frontend/
+└── src/
+    ├── app/                # Next.js App Router (all pages and routes)
+    │   ├── (main)/         # Group for authenticated/main layout pages
+    │   ├── api/            # API Route Handlers for backend communication
+    │   └── layout.tsx      # Root layout
+    ├── components/
+    │   ├── ui/             # Atomic components from a library like shadcn/ui
+    │   ├── layout/         # Page layout components (Header, Sidebar, Footer)
+    │   └── domain/         # Composite components specific to a business domain (e.g., UserProfile, ProjectCard)
+    ├── lib/
+    │   ├── api/            # API client setup (e.g., Axios) and domain-specific API functions
+    │   ├── queries/        # TanStack Query hooks (grouped by domain)
+    │   └── utils.ts        # General utility functions
+    ├── shared/
+    │   └── stores/         # Global client-side state management (Zustand stores)
+    ├── types/              # Global TypeScript type definitions
+    └── hooks/              # Custom React hooks (e.g., useWebSocket, useAuth)
+```
+
+-----
+
+## 📊 Global Data Management
+
+### Server State: TanStack Query
+
+TanStack Query is the standard for managing server state, including caching, background refetching, and mutations.
+
+  - **Location**: Group query and mutation hooks by domain in `src/lib/queries/`. For example, `user.queries.ts` or `project.queries.ts`.
+  - **Query Key Factories**: Use key factories to ensure consistency and prevent typos.
+  - **Cache Invalidation**: On successful mutation, invalidate related queries to keep the UI in sync with the backend.
+
+#### Example TanStack Query Implementation
+
+```typescript
+// src/lib/queries/user.queries.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { userApi } from '@/lib/api/user.api'; // Your API functions
+
+// 1. Query Key Factory for consistency
+export const userKeys = {
+  all: ['users'] as const,
+  me: () => [...userKeys.all, 'me'] as const,
+  detail: (id: string) => [...userKeys.all, 'detail', id] as const,
+};
+
+// 2. Custom hook for reading data (READ)
+export const useMe = () => {
+  return useQuery({
+    queryKey: userKeys.me(),
+    queryFn: userApi.getMe,
+  });
+};
+
+// 3. Custom hook for updating data (UPDATE)
+export const useUpdateProfile = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (profileData: UpdateProfilePayload) => userApi.updateProfile(profileData),
+    onSuccess: () => {
+      // Invalidate the 'me' query to refetch user data
+      queryClient.invalidateQueries({ queryKey: userKeys.me() });
+    },
+  });
+};
+```
+
+### Client State: Zustand
+
+Zustand is used for simple, global client-side state that doesn't need to be synced with the server.
+
+  - **Location**: `src/shared/stores/use[Name]Store.ts` (e.g., `useThemeStore.ts`).
+  - **Persistence**: Use the `persist` middleware to save state to `localStorage` (e.g., user theme preference).
+
+<!-- end list -->
+
+```typescript
+// src/shared/stores/useThemeStore.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface ThemeState {
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
+}
+
+export const useThemeStore = create<ThemeState>()(
+  persist(
+    (set) => ({
+      theme: 'light',
+      setTheme: (newTheme) => set({ theme: newTheme }),
+    }),
+    {
+      name: 'theme-storage', // Key for localStorage
+    }
+  )
+);
+```
+
+-----
+
+## 🔔 Real-Time Features
+
+### WebSocket Integration
+
+Use a custom hook to manage WebSocket connections and handle incoming messages.
+
+```typescript
+// src/hooks/useWebSocket.ts
+import { useEffect, useRef } from 'react';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+
+export const useWebSocket = (userId?: string) => {
+  const wsRef = useRef<WebSocket | null>(null);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!userId) return; // Don't connect if there's no user
+
+    const connect = () => {
+      const ws = new WebSocket(`wss://your-api.com/ws/${userId}`);
+      
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        // Show a toast notification
+        if (message.type === 'new_notification') {
+          toast.info(message.payload.text);
+          // Invalidate queries to refetch data and update the UI
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        }
+      };
+
+      // Add reconnection logic here (e.g., exponential backoff)
+      ws.onclose = () => { /* ... */ };
+
+      wsRef.current = ws;
+    };
+
+    connect();
+    
+    // Cleanup on unmount
+    return () => {
+      wsRef.current?.close();
+    };
+  }, [userId, queryClient]);
+};
+```
+
+-----
+
+## 📝 Form Implementation
+
+### Stack
+
+  - **Form Logic**: **React Hook Form** for performance and controlled/uncontrolled state management.
+  - **Validation**: **Zod** for schema-based validation, ensuring type safety from form to API.
+
+### Rules
+
+1.  **Schema-First**: Define a Zod schema for every form in `src/lib/validators/`.
+2.  **Explicit Defaults**: Provide `defaultValues` to `useForm`, using empty strings (`""`) instead of `undefined` to avoid uncontrolled component warnings.
+3.  **Error Styling**: Apply error-specific styles (`text-red-600`, `border-red-500`) to the `FormLabel`, `FormMessage`, and `Input` components.
+4.  **Controlled Selects**: For `<select>` components, ensure the `value` prop is handled safely (e.g., `value={field.value || ""}`).
+
+#### Generic Form Example
+
+```typescript
+// src/lib/validators/auth.ts
+import { z } from 'zod';
+
+export const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email."),
+  password: z.string().min(8, "Password must be at least 8 characters long."),
+});
+export type LoginSchema = z.infer<typeof loginSchema>;
+
+// src/components/domain/LoginForm.tsx
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { loginSchema, LoginSchema } from "@/lib/validators/auth";
+
+export function LoginForm() {
+  const form = useForm<LoginSchema>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  const onSubmit = (data: LoginSchema) => {
+    // ... handle form submission
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        {/* ... FormField, FormItem, FormControl ... */}
+      </form>
+    </Form>
+  );
+}
+```
+
+### Development Auto-Fill
+
+Include buttons to auto-fill forms in development environments to speed up testing.
+
+  - **Environment Check**: Wrap the button in `{process.env.NODE_ENV === 'development' && ...}`.
+  - **Trigger Validation**: Call `form.trigger()` after `form.setValue()` to show validation status.
+  - **Feedback**: Use a toast notification to confirm that data has been filled.
+
+<!-- end list -->
+
+```typescript
+// Inside a form component
+const fillDevData = () => {
+  form.setValue("email", "developer@example.com");
+  form.setValue("password", "password123");
+  form.trigger(); // Manually trigger validation
+  toast.info("Dev data filled!");
+};
+
+return (
+  <form>
+    {/* ... form fields ... */}
+    {process.env.NODE_ENV === 'development' && (
+      <Button type="button" onClick={fillDevData}>
+        🚀 Auto-fill (Dev)
+      </Button>
+    )}
+  </form>
+);
+```# General Frontend Architecture Rules
+
+## 🏗️ Project Structure & Architecture
+
+### Core Philosophy
+
+  - **Next.js App Router**: Utilize the App Router for its benefits in layout composition, server components, and route-based code splitting.
+  - **Component-Driven Development**: Build the UI from a collection of reusable, composable, and isolated components.
+  - **TypeScript First**: Enforce type safety across the entire codebase to reduce runtime errors and improve developer experience.
+
+### Folder Structure
+
+This structure promotes a clear separation of concerns and scalability.
+
+```
+frontend/
+└── src/
+    ├── app/                # Next.js App Router (all pages and routes)
+    │   ├── (main)/         # Group for authenticated/main layout pages
+    │   ├── api/            # API Route Handlers for backend communication
+    │   └── layout.tsx      # Root layout
+    ├── components/
+    │   ├── ui/             # Atomic components from a library like shadcn/ui
+    │   ├── layout/         # Page layout components (Header, Sidebar, Footer)
+    │   └── domain/         # Composite components specific to a business domain (e.g., UserProfile, ProjectCard)
+    ├── lib/
+    │   ├── api/            # API client setup (e.g., Axios) and domain-specific API functions
+    │   ├── queries/        # TanStack Query hooks (grouped by domain)
+    │   └── utils.ts        # General utility functions
+    ├── shared/
+    │   └── stores/         # Global client-side state management (Zustand stores)
+    ├── types/              # Global TypeScript type definitions
+    └── hooks/              # Custom React hooks (e.g., useWebSocket, useAuth)
+```
+
+-----
+
+## 📊 Global Data Management
+
+### Server State: TanStack Query
+
+TanStack Query is the standard for managing server state, including caching, background refetching, and mutations.
+
+  - **Location**: Group query and mutation hooks by domain in `src/lib/queries/`. For example, `user.queries.ts` or `project.queries.ts`.
+  - **Query Key Factories**: Use key factories to ensure consistency and prevent typos.
+  - **Cache Invalidation**: On successful mutation, invalidate related queries to keep the UI in sync with the backend.
+
+#### Example TanStack Query Implementation
+
+```typescript
+// src/lib/queries/user.queries.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { userApi } from '@/lib/api/user.api'; // Your API functions
+
+// 1. Query Key Factory for consistency
+export const userKeys = {
+  all: ['users'] as const,
+  me: () => [...userKeys.all, 'me'] as const,
+  detail: (id: string) => [...userKeys.all, 'detail', id] as const,
+};
+
+// 2. Custom hook for reading data (READ)
+export const useMe = () => {
+  return useQuery({
+    queryKey: userKeys.me(),
+    queryFn: userApi.getMe,
+  });
+};
+
+// 3. Custom hook for updating data (UPDATE)
+export const useUpdateProfile = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (profileData: UpdateProfilePayload) => userApi.updateProfile(profileData),
+    onSuccess: () => {
+      // Invalidate the 'me' query to refetch user data
+      queryClient.invalidateQueries({ queryKey: userKeys.me() });
+    },
+  });
+};
+```
+
+### Client State: Zustand
+
+Zustand is used for simple, global client-side state that doesn't need to be synced with the server.
+
+  - **Location**: `src/shared/stores/use[Name]Store.ts` (e.g., `useThemeStore.ts`).
+  - **Persistence**: Use the `persist` middleware to save state to `localStorage` (e.g., user theme preference).
+
+<!-- end list -->
+
+```typescript
+// src/shared/stores/useThemeStore.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface ThemeState {
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
+}
+
+export const useThemeStore = create<ThemeState>()(
+  persist(
+    (set) => ({
+      theme: 'light',
+      setTheme: (newTheme) => set({ theme: newTheme }),
+    }),
+    {
+      name: 'theme-storage', // Key for localStorage
+    }
+  )
+);
+```
+
+-----
+
+## 🔔 Real-Time Features
+
+### WebSocket Integration
+
+Use a custom hook to manage WebSocket connections and handle incoming messages.
+
+```typescript
+// src/hooks/useWebSocket.ts
+import { useEffect, useRef } from 'react';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+
+export const useWebSocket = (userId?: string) => {
+  const wsRef = useRef<WebSocket | null>(null);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!userId) return; // Don't connect if there's no user
+
+    const connect = () => {
+      const ws = new WebSocket(`wss://your-api.com/ws/${userId}`);
+      
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        // Show a toast notification
+        if (message.type === 'new_notification') {
+          toast.info(message.payload.text);
+          // Invalidate queries to refetch data and update the UI
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        }
+      };
+
+      // Add reconnection logic here (e.g., exponential backoff)
+      ws.onclose = () => { /* ... */ };
+
+      wsRef.current = ws;
+    };
+
+    connect();
+    
+    // Cleanup on unmount
+    return () => {
+      wsRef.current?.close();
+    };
+  }, [userId, queryClient]);
+};
+```
+
+-----
+
+## 📝 Form Implementation
+
+### Stack
+
+  - **Form Logic**: **React Hook Form** for performance and controlled/uncontrolled state management.
+  - **Validation**: **Zod** for schema-based validation, ensuring type safety from form to API.
+
+### Rules
+
+1.  **Schema-First**: Define a Zod schema for every form in `src/lib/validators/`.
+2.  **Explicit Defaults**: Provide `defaultValues` to `useForm`, using empty strings (`""`) instead of `undefined` to avoid uncontrolled component warnings.
+3.  **Error Styling**: Apply error-specific styles (`text-red-600`, `border-red-500`) to the `FormLabel`, `FormMessage`, and `Input` components.
+4.  **Controlled Selects**: For `<select>` components, ensure the `value` prop is handled safely (e.g., `value={field.value || ""}`).
+
+#### Generic Form Example
+
+```typescript
+// src/lib/validators/auth.ts
+import { z } from 'zod';
+
+export const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email."),
+  password: z.string().min(8, "Password must be at least 8 characters long."),
+});
+export type LoginSchema = z.infer<typeof loginSchema>;
+
+// src/components/domain/LoginForm.tsx
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { loginSchema, LoginSchema } from "@/lib/validators/auth";
+
+export function LoginForm() {
+  const form = useForm<LoginSchema>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  const onSubmit = (data: LoginSchema) => {
+    // ... handle form submission
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        {/* ... FormField, FormItem, FormControl ... */}
+      </form>
+    </Form>
+  );
+}
+```
+
+### Development Auto-Fill
+
+Include buttons to auto-fill forms in development environments to speed up testing.
+
+  - **Environment Check**: Wrap the button in `{process.env.NODE_ENV === 'development' && ...}`.
+  - **Trigger Validation**: Call `form.trigger()` after `form.setValue()` to show validation status.
+  - **Feedback**: Use a toast notification to confirm that data has been filled.
+
+<!-- end list -->
+
+```typescript
+// Inside a form component
+const fillDevData = () => {
+  form.setValue("email", "developer@example.com");
+  form.setValue("password", "password123");
+  form.trigger(); // Manually trigger validation
+  toast.info("Dev data filled!");
+};
+
+return (
+  <form>
+    {/* ... form fields ... */}
+    {process.env.NODE_ENV === 'development' && (
+      <Button type="button" onClick={fillDevData}>
+        🚀 Auto-fill (Dev)
+      </Button>
+    )}
+  </form>
+);
+```

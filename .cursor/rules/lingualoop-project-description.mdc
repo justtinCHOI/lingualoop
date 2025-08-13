@@ -1,0 +1,196 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+
+# LinguaLoop Project Description
+
+## 1. Project Vision
+
+LinguaLoop is an intelligent, gamified language-learning platform designed to help users master idioms and expressions through a customizable Spaced Repetition System (SRS) and advanced AI-powered features.
+
+## 2. Page Specifications & Features
+
+### 2.1. Core Pages
+
+| Page | URL | Key Features & Description |
+| --- | --- | --- |
+| **Login/Signup** | `/auth/login` | • Social login only (Google, Apple, GitHub).<br>• Redirects to the dashboard upon successful login. |
+| **Settings** | `/settings` | • **Customizable SRS Intervals**: Users can select their preferred review schedule (e.g., powers of 2, powers of 3, custom days).<br>• Profile management (name, avatar).<br>• Notification preferences. |
+| **Membership** | `/membership` | • Displays the user's current membership tier (Free, Premium).<br>• Provides a feature comparison table.<br>• Allows users to upgrade their membership via payment. |
+| **Dashboard** | `/dashboard` | • "Welcome, [User]!" greeting.<br>• **Idiom of the Day**: A new idiom is suggested daily, with a refresh option.<br>• Gamification summary: Learning streaks, XP, and level.<br>• Notification for idioms due for review, with a link to the Test page. |
+| **Workspace** | `/workspace` | • The central hub for managing idioms.<br>• **Workspace Creation**: Users can add idioms manually or import packs from the community.<br>• **Idiom Entry**: Add an idiom (Language 1), translations (Language 2+), formality tags, and audio pronunciation.<br>• **AI Examples**: Generate personalized example sentences for any idiom.<br>• **Archive**: Exclude specific idioms from the review queue. |
+| **Test** | `/test` | • **Test Setup**: Configure review sessions by SRS interval, question language, answer language, and test method.<br>• **Test Methods**: 1. Write Meaning, 2. Fill-in-the-Blank, 3. Multiple Choice.<br>• **Test Flow**: Includes hints, answer submission, and immediate feedback. Users can mark an answer as correct or choose to review it again in the next cycle. Features an "auto-advance on correct" option. |
+| **Hands-Free Review** | `/review/audio` | • An audio-only review mode for users on the go (e.g., driving, walking).<br>• The system reads prompts aloud, and the user responds verbally. |
+| **Habit Tracker** | `/tracker` | • A GitHub-style contribution calendar that visualizes the user's daily learning activity. |
+| **Leaderboard** | `/leaderboard` | • Weekly and monthly rankings based on XP earned and learning streaks. |
+| **Community (Shop)** | `/community` | • A marketplace for user-created idiom packs.<br>• **Create Packs**: Users can bundle their idioms into packs and share them.<br>• **Browse Packs**: Discover and subscribe to free or paid packs. |
+
+### 2.2. Advanced & Premium Features
+
+| Feature | Location | Description |
+| --- | --- | --- |
+| **Notion Integration** | `/settings/integrations` | • Connect a Notion database to LinguaLoop via API key.<br>• Idioms added to the specified Notion page are automatically synced to the user's workspace. |
+| **Detailed Analytics** | `/analytics` | • A dashboard visualizing learning data, including accuracy rates, study time, and most-missed idiom types. |
+| **AI Pronunciation Coach** | `/test`, `/workspace` | • Users can record themselves saying an idiom, and the AI provides feedback on accuracy, intonation, and stress compared to a native speaker. |
+| **AI Discovery Engine** | `/discover` | • Paste a URL or block of text, and the AI will scan it to extract idioms, suggesting them for the user to learn. |
+| **PWA Support** | App-wide | • Allows the website to be installed on a mobile home screen for an app-like experience with offline access and push notifications. |
+
+## 3. Database Diagram (ERD)
+
+**Key Relationships**:
+
+- A `User` has one `Membership` and can have multiple `Workspaces`.
+- A `Workspace` contains multiple `Idioms`.
+- An `Idiom` can have multiple `Translations` and `Example_Sentences`.
+- A `Review_Item` is the core join table tracking a `User`'s learning progress (SRS level, next review date) for a specific `Idiom`.
+- `Community_Packs` are collections of `Idioms` that `Users` can subscribe to, managed through the `User_Packs` table.
+
+```
+erDiagram
+    users {
+        string user_id PK
+        string email
+        string name
+        string auth_provider
+        int xp
+        int level
+        int streak
+        string membership_id FK
+        string srs_profile_id FK
+        datetime created_at
+    }
+    memberships {
+        string membership_id PK
+        string tier_name
+        json features
+    }
+    srs_profiles {
+        string srs_profile_id PK
+        string profile_name
+        string intervals "e.g., '1,2,4,8,16'"
+    }
+    workspaces {
+        string workspace_id PK
+        string user_id FK
+        string name
+        datetime created_at
+    }
+    idioms {
+        string idiom_id PK
+        string workspace_id FK
+        string text
+        string formality
+        string audio_url
+        datetime created_at
+    }
+    translations {
+        string translation_id PK
+        string idiom_id FK
+        string language_code
+        string text
+    }
+    example_sentences {
+        string sentence_id PK
+        string idiom_id FK
+        string user_id FK
+        string language_code
+        string text
+        boolean is_ai_generated
+    }
+    review_items {
+        string review_item_id PK
+        string user_id FK
+        string idiom_id FK
+        int srs_level
+        datetime next_review_at
+        datetime last_reviewed_at
+        boolean is_archived
+    }
+    habit_tracker_entries {
+        string entry_id PK
+        string user_id FK
+        date entry_date
+        boolean completed
+    }
+    community_packs {
+        string pack_id PK
+        string creator_id FK
+        string title
+        string description
+        float price
+        boolean is_public
+    }
+    pack_idioms {
+        string pack_id PK,FK
+        string idiom_id PK,FK
+    }
+    user_packs {
+        string user_id PK,FK
+        string pack_id PK,FK
+        datetime subscribed_at
+    }
+    users ||--o{ workspaces : "has"
+    users ||--o{ review_items : "learns"
+    users ||--|{ memberships : "has"
+    users ||--|{ srs_profiles : "uses"
+    users ||--o{ habit_tracker_entries : "tracks"
+    workspaces ||--o{ idioms : "contains"
+    idioms ||--o{ translations : "has"
+    idioms ||--o{ example_sentences : "has"
+    idioms ||--o{ review_items : "is"
+    community_packs ||--o{ pack_idioms : "contains"
+    idioms ||--o{ pack_idioms : "is in"
+    users ||--o{ user_packs : "subscribes"
+    community_packs ||--o{ user_packs : "is subscribed by"
+
+```
+
+## 4. API Specification (v1)
+
+### 4.1. Authentication (`/api/v1/auth`)
+
+- `GET /auth/{provider}`: Initiate social login flow.
+- `GET /auth/{provider}/callback`: Handle social login callback and issue JWT.
+- `POST /auth/logout`: Invalidate user session/token.
+
+### 4.2. Users (`/api/v1/users`)
+
+- `GET /users/me`: Get current user's profile, membership, and learning stats.
+- `PUT /users/me`: Update user profile information.
+- `PUT /users/me/settings`: Update user settings (e.g., SRS profile).
+
+### 4.3. Workspaces & Idioms (`/api/v1/workspaces`)
+
+- `GET /workspaces`: List all of the user's workspaces.
+- `POST /workspaces`: Create a new workspace.
+- `GET /workspaces/{workspaceId}/idioms`: List all idioms in a workspace.
+- `POST /workspaces/{workspaceId}/idioms`: Add a new idiom.
+- `PUT /idioms/{idiomId}`: Update an idiom (e.g., add a translation).
+- `DELETE /idioms/{idiomId}`: Delete an idiom.
+- `POST /idioms/{idiomId}/archive`: Archive an idiom to exclude it from reviews.
+
+### 4.4. AI Features (`/api/v1/ai`)
+
+- `POST /ai/generate-examples`: Request AI-generated example sentences for an idiom.
+- `POST /ai/coach-pronunciation`: Submit an audio recording for pronunciation analysis.
+- `POST /ai/discover-idioms`: Submit text or a URL to extract idioms.
+
+### 4.5. Test & Review (`/api/v1/reviews`)
+
+- `GET /reviews/queue`: Get the list of idioms due for review based on the SRS algorithm.
+- `POST /reviews/sessions`: Start a new test session.
+- `POST /reviews/sessions/{sessionId}/answer`: Submit an answer for a question and get it graded.
+- `PUT /reviews/items/{itemId}`: Manually update the review state of an item (e.g., "review again next time").
+
+### 4.6. Community (`/api/v1/community`)
+
+- `GET /community/packs`: List community packs (with search and filtering).
+- `POST /community/packs`: Create a new community pack.
+- `GET /community/packs/{packId}`: Get details for a specific pack.
+- `POST /community/packs/{packId}/subscribe`: Subscribe to or purchase a pack.
+
+### 4.7. Webhooks (`/api/v1/webhooks`)
+
+- `POST /webhooks/notion`: Endpoint to receive updates from Notion for integration.
